@@ -10,7 +10,7 @@
 - AWS CLI
 - Terraform
 - Ansible
-- 01 Key Pair (EC2)
+- <a href="https://github.com/rodneyazev/aws-templates-for-basic-loadbalancer-and-auto-scaling-infrastructures">01 Key Pair (EC2)</a>
 
 <i>P.S.: If you are using any APT GNU/Linux distribution, you can install them using my <a href="https://github.com/rodneyazev/just-a-devops-toolkit-wsl-linux">just-a-devops-toolkit-wsl-linux</a></i>
 
