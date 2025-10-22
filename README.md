@@ -18,6 +18,11 @@
   <img src="img/logo-cicd.png" alt="logo" style="width: 60%"/>
 </p>
 
+<i>Don't forget to prepare your Jenkins environment by running the following pipelines:</i>
+
+- Install Basic Applications
+- Install DevTools
+
 # Jenkins
 
 ### Install Jenkins container:
