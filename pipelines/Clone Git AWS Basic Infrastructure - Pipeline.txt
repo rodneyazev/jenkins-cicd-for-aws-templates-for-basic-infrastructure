@@ -1,0 +1,19 @@
+pipeline {
+    agent any
+    
+    stages {
+        stage('Clean Workspace') {
+            steps {
+                cleanWs()
+            }
+        }
+        
+        stage('Clone Repository') {
+            steps {
+                script {
+                    sh 'git clone https://github.com/rodneyazev/aws-templates-for-basic-loadbalancer-and-auto-scaling-infrastructures.git'
+                }
+            }
+        }
+    }
+}

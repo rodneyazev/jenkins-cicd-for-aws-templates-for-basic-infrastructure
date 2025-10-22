@@ -1,0 +1,66 @@
+pipeline {
+    agent any
+    
+    parameters {
+        choice(
+            name: 'ACTION',
+            choices: ['plan', 'apply', 'destroy'],
+            description: 'Terraform action'
+        )
+    }
+    
+    environment {
+        // Diretório persistente no container Jenkins
+        TF_STATE_DIR = "/var/jenkins_home/terraform-state"
+    }
+    
+    stages {
+        stage('Prepare Workspace') {
+            steps {
+                script {
+                    sh """
+                        mkdir -p ${TF_STATE_DIR}
+                        cd ${TF_STATE_DIR}
+                        if [ ! -d ".git" ]; then
+                            git clone https://github.com/rodneyazev/aws-templates-for-basic-loadbalancer-and-auto-scaling-infrastructures.git .
+                        else
+                            git pull
+                        fi
+                    """
+                }
+            }
+        }
+        
+        stage('Update SSH Key Configuration') {
+            steps {
+                script {
+                    dir("${TF_STATE_DIR}/aws-basic-infra") {
+                        sh '''
+                            sed -i 's|~/.aws/<your-ssh-key>.pem|~/.aws/my-ssh-key-votc.pem|g' variables.tf
+                            sed -i 's|<your-ssh-key-NAME>|my-ssh-key-votc|g' variables.tf
+                        '''
+                    }
+                }
+            }
+        }
+        
+        stage('Terraform Operations') {
+            steps {
+                script {
+                    dir("${TF_STATE_DIR}/aws-basic-infra") {
+                        sh 'terraform init'
+                        sh """
+                            if [ "${params.ACTION}" = "plan" ]; then
+                                terraform plan
+                            elif [ "${params.ACTION}" = "apply" ]; then
+                                terraform apply -auto-approve
+                            elif [ "${params.ACTION}" = "destroy" ]; then
+                                terraform destroy -auto-approve
+                            fi
+                        """
+                    }
+                }
+            }
+        }
+    }
+}

@@ -1,0 +1,166 @@
+pipeline {
+    agent any
+    
+    parameters {
+        choice(
+            name: 'ACTION',
+            choices: ['plan', 'apply', 'destroy'],
+            description: 'Terraform action'
+        )
+    }
+    
+    environment {
+        AWS_DEFAULT_REGION = 'us-east-1'
+        TF_STATE_BUCKET = 'votc-terraform-state'
+    }
+    
+    stages {
+        stage('Setup Terraform Backend') {
+            when {
+                expression { params.ACTION != 'destroy' }
+            }
+            steps {
+                script {
+                    sh """
+                        # Create S3 bucket if it doesn't exist (only for apply/plan)
+                        if ! aws s3 ls s3://${TF_STATE_BUCKET} 2>/dev/null; then
+                            echo "Creating S3 bucket for Terraform state..."
+                            aws s3 mb s3://${TF_STATE_BUCKET} --region ${AWS_DEFAULT_REGION}
+                            # Vamos criar SEM versioning para facilitar o cleanup
+                            # aws s3api put-bucket-versioning --bucket ${TF_STATE_BUCKET} --versioning-configuration Status=Enabled
+                            echo "✅ S3 bucket created (no versioning): ${TF_STATE_BUCKET}"
+                        else
+                            echo "✅ S3 bucket already exists: ${TF_STATE_BUCKET}"
+                        fi
+                    """
+                }
+            }
+        }
+		
+		/* Versão sem versionamento
+		stage('Setup Terraform Backend') {
+			when {
+				expression { params.ACTION != 'destroy' }
+			}
+			steps {
+				script {
+					sh """
+						if ! aws s3 ls s3://${TF_STATE_BUCKET} 2>/dev/null; then
+							echo "Creating S3 bucket for Terraform state..."
+							aws s3 mb s3://${TF_STATE_BUCKET} --region ${AWS_DEFAULT_REGION}
+							# Cria SEM versioning
+							echo "✅ S3 bucket created (no versioning): ${TF_STATE_BUCKET}"
+						else
+							echo "✅ S3 bucket already exists: ${TF_STATE_BUCKET}"
+						fi
+					"""
+				}
+			}
+		}*/
+        
+        stage('Clone Repository') {
+            steps {
+                script {
+                    sh 'rm -rf aws-infra'
+                    sh 'git clone https://github.com/rodneyazev/aws-templates-for-basic-loadbalancer-and-auto-scaling-infrastructures.git aws-infra'
+                }
+            }
+        }
+        
+        stage('Update SSH Key Configuration') {
+            steps {
+                script {
+                    dir('aws-infra/aws-basic-infra') {
+                        sh '''
+                            sed -i 's|~/.aws/<your-ssh-key>.pem|~/.aws/my-ssh-key-votc.pem|g' variables.tf
+                            sed -i 's|<your-ssh-key-NAME>|my-ssh-key-votc|g' variables.tf
+                        '''
+                    }
+                }
+            }
+        }
+        
+        stage('Configure Remote Backend') {
+            steps {
+                script {
+                    dir('aws-infra/aws-basic-infra') {
+                        sh """
+                            cat > backend.tf << EOF
+terraform {
+  backend "s3" {
+    bucket         = "${TF_STATE_BUCKET}"
+    key            = "aws-basic-infra/terraform.tfstate"
+    region         = "${AWS_DEFAULT_REGION}"
+    encrypt        = true
+  }
+}
+EOF
+                        """
+                    }
+                }
+            }
+        }
+        
+        stage('Terraform Operations') {
+            steps {
+                script {
+                    dir('aws-infra/aws-basic-infra') {
+                        sh 'terraform init -reconfigure'
+                        sh 'terraform validate'
+                        sh """
+                            if [ "${params.ACTION}" = "plan" ]; then
+                                terraform plan
+                            elif [ "${params.ACTION}" = "apply" ]; then
+                                terraform apply -auto-approve
+                            elif [ "${params.ACTION}" = "destroy" ]; then
+                                echo "⚠️  DESTROYING INFRASTRUCTURE..."
+                                terraform destroy -auto-approve
+                            fi
+                        """
+                    }
+                }
+            }
+        }
+        
+        stage('Cleanup S3 Bucket After Destroy') {
+            when {
+                expression { params.ACTION == 'destroy' }
+            }
+            steps {
+                script {
+                    sh """
+                        echo "🧹 Cleaning up S3 bucket after destroy..."
+                        
+                        if aws s3 ls s3://${TF_STATE_BUCKET} 2>/dev/null; then
+                            echo "🔄 Disabling versioning first..."
+                            # Desabilita versioning para facilitar cleanup
+                            aws s3api put-bucket-versioning --bucket ${TF_STATE_BUCKET} --versioning-configuration Status=Suspended
+                            
+                            echo "🗑️  Emptying bucket with aggressive approach..."
+                            
+                            # Método agressivo - deleta tudo
+                            aws s3api delete-objects --bucket ${TF_STATE_BUCKET} --delete "\$(aws s3api list-object-versions --bucket ${TF_STATE_BUCKET} --query='{Objects: Versions[].{Key:Key,VersionId:VersionId}}')" 2>/dev/null || echo "No versions to delete"
+                            
+                            aws s3api delete-objects --bucket ${TF_STATE_BUCKET} --delete "\$(aws s3api list-object-versions --bucket ${TF_STATE_BUCKET} --query='{Objects: DeleteMarkers[].{Key:Key,VersionId:VersionId}}')" 2>/dev/null || echo "No delete markers to delete"
+                            
+                            # Limpa qualquer objeto restante
+                            aws s3 rm s3://${TF_STATE_BUCKET} --recursive 2>/dev/null || echo "Bucket already empty"
+                            
+                            echo "✅ Deleting bucket..."
+                            aws s3 rb s3://${TF_STATE_BUCKET} --force
+                            echo "🎉 S3 bucket successfully deleted: ${TF_STATE_BUCKET}"
+                        else
+                            echo "✅ S3 bucket already deleted"
+                        fi
+                    """
+                }
+            }
+        }
+    }
+    
+    post {
+        always {
+            echo "✅ Pipeline completed!"
+        }
+    }
+}

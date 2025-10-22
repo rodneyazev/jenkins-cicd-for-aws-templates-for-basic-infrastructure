@@ -1,0 +1,97 @@
+pipeline {
+    agent any
+    
+    stages {
+        stage('Update && Upgrade packages') {
+            steps {
+                sh '''
+                    # Update package lists
+                    echo "Updating package lists..."
+                    apt update -y
+                        
+                    # Upgrade packages
+                    echo "Upgrading packages..."
+                    apt upgrade -y
+                '''
+            }
+        }
+        
+        stage('Install AWS CLI') {
+            steps {
+                echo "🔧 Installing AWS CLI..."
+                sh '''
+                    if command -v aws; then
+                        echo "✅ AWS SDK/CLI already installed."
+                        aws --version | cut -d' ' -f1 | cut -d'/' -f2
+                    else
+                        curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+                        unzip -q awscliv2.zip
+                        ./aws/install --update
+                        rm -rf awscliv2.zip aws/
+                        
+                        # Verify installation
+                        echo "=== Package Version ==="
+                        aws --version
+                    fi
+                '''
+            }
+        }
+        
+        stage('Install Terraform') {
+            steps {
+                echo "📦 Installing Terraform..."
+                sh '''
+                    if command -v terraform; then 
+                        echo "✅ Terraform already installed."
+                        terraform -v | head -n 1
+                    else
+                        # Install Terraform
+                        wget -q https://releases.hashicorp.com/terraform/1.13.3/terraform_1.13.3_linux_amd64.zip
+                        unzip -q terraform_1.13.3_linux_amd64.zip -d /usr/local/bin/
+                        chmod +x /usr/local/bin/terraform
+                        rm terraform_1.13.3_linux_amd64.zip
+                    
+                        # Verify installation
+                        echo "=== Package Version ==="
+                        terraform --version
+                    fi
+                '''
+            }
+        }
+        
+        stage('Install Ansible') {
+            steps {
+                echo "🎯 Installing Ansible..."
+                sh '''
+                    if command -v ansible; then
+                        echo "✅ Ansible already installed."
+                        ansible --version | head -n 1;
+                    else
+                        apt-get install -y ansible
+                        
+                        # Verify installation
+                        echo "=== Package Version ==="
+                        ansible --version
+                    fi
+                '''
+            }
+        }
+        
+        stage('Verify Tools') {
+            steps {
+                echo "✅ Verifying installations..."
+                sh '''
+                    echo "Terraform: $(terraform version | head -1)"
+                    echo "Ansible: $(ansible --version | head -1)"
+                    echo "Ansible: $(aws --version)"
+                '''
+            }
+        }
+    }
+    
+    post {
+        always {
+            echo "🎉 Tools installation completed!"
+        }
+    }
+}

@@ -1,0 +1,37 @@
+pipeline {
+    agent any
+    
+    stages {
+        stage('Clone Repository') {
+            steps {
+                git branch: 'main',
+                url: 'https://github.com/rodneyazev/checking--my-dev-docker-env.git'
+            }
+        }
+        
+        stage('Build Java App') {
+            steps {
+                sh 'mvn clean package -DskipTests'
+            }
+        }
+        
+        stage('Deploy Java App') {
+            steps {
+                script {
+                    sh 'mkdir -p /opt/checking-my-dev-env'
+                    sh 'cp -r * /opt/checking-my-dev-env/'
+                    echo '✅ Java application deployed to /opt/checking-my-dev-env/'
+                    echo '📦 JAR file ready for manual startup'
+                }
+            }
+        }
+    }
+    
+    post {
+        success {
+            echo '✅ Java application built and deployed successfully!'
+            echo '📁 Location: /opt/checking-my-dev-env/'
+            echo '🚀 To start manually: cd /opt/checking-my-dev-env && java -jar target/app-*.jar'
+        }
+    }
+}

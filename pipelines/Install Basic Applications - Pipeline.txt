@@ -1,0 +1,45 @@
+pipeline {
+    agent any
+
+    stages {
+        stage('Install Basic Applications') {
+            steps {
+                sh '''
+                    echo "Updating package lists..."
+                    apt update
+                    echo "Upgrading packages..."
+                    apt upgrade -y
+                    
+                    echo "Checking for required packages..."
+					if command -v curl >/dev/null 2>&1 && \
+                       command -v wget >/dev/null 2>&1 && \
+                       command -v unzip >/dev/null 2>&1 && \
+                       command -v git >/dev/null 2>&1 && \
+                       command -v mvn >/dev/null 2>&1 && \
+                       command -v vim >/dev/null 2>&1 && \
+                       dpkg -l ca-certificates >/dev/null 2>&1; then
+					   echo "✅ Minimum Required Packages already installed."
+					else
+					     apt install curl wget make unzip ssh git gpg apt-transport-https ca-certificates gnupg maven vim -y
+					     echo "✅ Minimum Required Packages installed successfully."
+					fi
+					
+					# Verify installations
+                    echo "=== Package Versions ==="
+                    command -v curl && curl --version | head -1
+                    command -v wget && wget --version | head -1
+                    command -v unzip && unzip -v | head -1
+                    command -v git && git --version
+                    command -v mvn && mvn --version
+                    command -v vim && vim --version
+                 '''
+            }
+        }
+    }
+    
+    post {
+        always {
+            echo "Basic applications installation completed!"
+        }
+    }
+}

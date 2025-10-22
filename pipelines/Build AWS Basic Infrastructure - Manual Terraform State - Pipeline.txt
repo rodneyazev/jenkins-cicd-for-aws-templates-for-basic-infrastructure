@@ -1,0 +1,85 @@
+pipeline {
+    agent any
+    
+    parameters {
+        choice(
+            name: 'ACTION',
+            choices: ['plan', 'apply', 'destroy'],
+            description: 'Terraform action'
+        )
+    }
+    
+    environment {
+        PERSISTENT_STATE_DIR = "/var/jenkins_home/terraform-state-files"
+    }
+    
+    stages {
+        stage('Setup') {
+            steps {
+                script {
+                    sh "mkdir -p ${PERSISTENT_STATE_DIR}"
+                    sh 'rm -rf aws-infra'
+                    sh 'git clone https://github.com/rodneyazev/aws-templates-for-basic-loadbalancer-and-auto-scaling-infrastructures.git aws-infra'
+                }
+            }
+        }
+        
+        stage('Restore Previous State') {
+            steps {
+                script {
+                    dir('aws-infra/aws-basic-infra') {
+                        sh """
+                            # Copia state files anteriores se existirem
+                            cp ${PERSISTENT_STATE_DIR}/*.tfstate* . 2>/dev/null || echo "No previous state found"
+                        """
+                    }
+                }
+            }
+        }
+        
+        stage('Update SSH Key Configuration') {
+            steps {
+                script {
+                    dir('aws-infra/aws-basic-infra') {
+                        sh '''
+                            sed -i 's|~/.aws/<your-ssh-key>.pem|~/.aws/my-ssh-key-votc.pem|g' variables.tf
+                            sed -i 's|<your-ssh-key-NAME>|my-ssh-key-votc|g' variables.tf
+                        '''
+                    }
+                }
+            }
+        }
+        
+        stage('Terraform Operations') {
+            steps {
+                script {
+                    dir('aws-infra/aws-basic-infra') {
+                        sh 'terraform init'
+                        sh """
+                            if [ "${params.ACTION}" = "plan" ]; then
+                                terraform plan
+                            elif [ "${params.ACTION}" = "apply" ]; then
+                                terraform apply -auto-approve
+                            elif [ "${params.ACTION}" = "destroy" ]; then
+                                terraform destroy -auto-approve
+                            fi
+                        """
+                    }
+                }
+            }
+        }
+        
+        stage('Save State') {
+            steps {
+                script {
+                    dir('aws-infra/aws-basic-infra') {
+                        sh """
+                            # Salva state files para uso futuro
+                            cp *.tfstate* ${PERSISTENT_STATE_DIR}/ 2>/dev/null || echo "No state files to save"
+                        """
+                    }
+                }
+            }
+        }
+    }
+}
